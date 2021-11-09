@@ -24,4 +24,5 @@ I recommend only using this tool as a final step before building your project. F
 ## Credits
 
 d4rkpl4y3r - BRDF PBS Macro shader I based my standard replacements on
-mykohsu - Fast array filling method I used for creating the data arrays in UV2 and 3
+
+mykohsu - Fast array filling method I used for creating the data arrays in UV2 and 3 (https://github.com/mykohsu/Extensions/blob/master/ArrayExtensions.cs)
