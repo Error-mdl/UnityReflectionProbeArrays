@@ -4,6 +4,10 @@
 
 #endif
 
+float _FacingWallMin;
+float _FacingWallMax;
+
+
 /* An example of how to define the constants for the reflection probY_DECLARE_TEXCUBEARRAY(_ReflProbeArray);
 float4 _ReflProbeArray_HDR;
 UNITY_DECLARE_TEX2DARRAY(_ProbeParams);
@@ -44,6 +48,8 @@ struct ProbeArray_GlossyEnvironmentData
 {
 	uint4	probeIndicies;
 	float4	probeWeights;
+	bool4   probeBoxProj;
+	float4  probeBoxRayLen;
 	float3	meshBoundsMin;
 	float3	meshBoundsMax;
     half    perceptualRoughness;
@@ -92,9 +98,9 @@ float SdBox(float3 pos, float3 boxMin, float3 boxMax)
 float ProbeWeightFromBounds(float3 pos, float3 boundsMin, float3 boundsMax, float falloff)
 {
 	float dist = SdBox(pos, boundsMin, boundsMax);
-	float weight = saturate((falloff - dist) / falloff);
+	float weight = saturate((falloff-dist) / falloff);
 	weight *= weight;
-	weight = max(1E-4, weight);
+	weight *= weight;
 	return weight;
 }
 
@@ -110,12 +116,13 @@ float ProbeWeightFromBounds(float3 pos, float3 boundsMin, float3 boundsMax, floa
  */
 
 float3 BoxProjection (float3 direction, float3 position,
-	float4 cubemapPosition, float3 boxMin, float3 boxMax) 
+	float4 cubemapPosition, float3 boxMin, float3 boxMax, inout float rayLen)
 {
-	if (cubemapPosition.w > 0) {
+	UNITY_BRANCH if (cubemapPosition.w > 0) {
 		float3 factors = ((direction > 0 ? boxMax : boxMin) - position) / direction;
 		float scalar = min(min(factors.x, factors.y), factors.z);
 		direction = direction * scalar + (position - cubemapPosition);
+		rayLen = scalar;
 	}
 	
 	return direction;
@@ -123,22 +130,36 @@ float3 BoxProjection (float3 direction, float3 position,
 
 
 
-void GetWeightUVW(UNITY_ARGS_TEX2DARRAY(probeParams), inout float probeWeight, inout float3 probeUVW, float4 pixelWorldPos, float3 reflectionDir,
+void GetWeightUVW(UNITY_ARGS_TEX2DARRAY(probeParams), inout float probeWeight, inout float3 probeUVW, inout bool probeBoxProj, inout float rayLen, float4 pixelWorldPos, float3 reflectionDir,
 	float falloff, float3 meshBoundsMin, float3 meshBoundsMax, int probeIndex)
 {
 	float4 position = UNITY_SAMPLE_TEX2DARRAY_LOD(probeParams, float3(0.125, 0.5, probeIndex), 0);
 	float3 boxMin = UNITY_SAMPLE_TEX2DARRAY_LOD(probeParams, float3(0.375, 0.5, probeIndex), 0).xyz;
 	float3 boxMax = UNITY_SAMPLE_TEX2DARRAY_LOD(probeParams, float3(0.625, 0.5, probeIndex), 0).xyz;
 
+	probeBoxProj = round(position.w);
+
 	probeWeight = ProbeWeightFromBounds(pixelWorldPos, boxMin, boxMax, falloff); // determine the falloff before expanding the bounding box to cover the mesh
 
 	boxMin = min(boxMin, meshBoundsMin);
 	boxMax = max(boxMax, meshBoundsMax);
 
-	probeUVW = BoxProjection(reflectionDir, pixelWorldPos, position, boxMin, boxMax);
+	rayLen = 0;
+	probeUVW = BoxProjection(reflectionDir, pixelWorldPos, position, boxMin, boxMax, rayLen);
 
 	// blend out the probe if the ray travels less than a cm, which usually happens where a probe just encapsulates a wall which makes the reflection look painted on.
-	probeWeight *= smoothstep(0, 0.1, length(probeUVW + position.xyz - pixelWorldPos));
+	probeWeight *= smoothstep(_FacingWallMin, _FacingWallMax, length(probeUVW + position.xyz - pixelWorldPos));
+}
+
+#define IMPORTANCE_MULT 100.0
+
+void BoolProbeBoxes(inout ProbeArray_GlossyEnvironmentData glossIn)
+{
+	//float totalLen = glossIn.probeBoxRayLen.x + glossIn.probeBoxRayLen.y + glossIn.probeBoxRayLen.z + glossIn.probeBoxRayLen.w;
+	float4 probeBooledWeight = glossIn.probeBoxRayLen;
+	float maxLen = max(glossIn.probeBoxRayLen.x, max(glossIn.probeBoxRayLen.y, max(glossIn.probeBoxRayLen.z, glossIn.probeBoxRayLen.w)));
+	probeBooledWeight = probeBooledWeight / (20*(-glossIn.probeBoxRayLen + 0.051 + maxLen));
+	glossIn.probeWeights *= glossIn.probeBoxProj ? probeBooledWeight : float4(0.01,0.01,0.01,0.01);
 }
 
 /** GetProbeUVWsAndWeights
@@ -160,21 +181,26 @@ void GetProbeUVWsAndWeights(UNITY_ARGS_TEX2DARRAY(probeParams), inout ProbeArray
 	 * only do so for the others if the probe's base weight is greater than the minimum weight as we won't be sampling them
 	 * if they have below the min weight */
 
-	GetWeightUVW(UNITY_PASS_TEX2DARRAY(probeParams), glossIn.probeWeights.x, glossIn.UVW0, pixelWorldPos, reflectionDir,
-		falloff, glossIn.meshBoundsMin, glossIn.meshBoundsMax, glossIn.probeIndicies.x);
+	GetWeightUVW(UNITY_PASS_TEX2DARRAY(probeParams), glossIn.probeWeights.x, glossIn.UVW0, glossIn.probeBoxProj.x, glossIn.probeBoxRayLen.x,
+		pixelWorldPos, reflectionDir, falloff, glossIn.meshBoundsMin, glossIn.meshBoundsMax, glossIn.probeIndicies.x);
 
+	//Ensure we always sample the closest probe if all probe weights are 0
+	
 
-	GetWeightUVW(UNITY_PASS_TEX2DARRAY(probeParams), glossIn.probeWeights.y, glossIn.UVW1, pixelWorldPos, reflectionDir,
-		falloff, glossIn.meshBoundsMin, glossIn.meshBoundsMax, glossIn.probeIndicies.y);
+	GetWeightUVW(UNITY_PASS_TEX2DARRAY(probeParams), glossIn.probeWeights.y, glossIn.UVW1, glossIn.probeBoxProj.y, glossIn.probeBoxRayLen.y,
+		pixelWorldPos, reflectionDir, falloff, glossIn.meshBoundsMin, glossIn.meshBoundsMax, glossIn.probeIndicies.y);
 
-	GetWeightUVW(UNITY_PASS_TEX2DARRAY(probeParams), glossIn.probeWeights.z, glossIn.UVW2, pixelWorldPos, reflectionDir,
-		falloff, glossIn.meshBoundsMin, glossIn.meshBoundsMax, glossIn.probeIndicies.z);
+	GetWeightUVW(UNITY_PASS_TEX2DARRAY(probeParams), glossIn.probeWeights.z, glossIn.UVW2, glossIn.probeBoxProj.z, glossIn.probeBoxRayLen.z,
+		pixelWorldPos, reflectionDir, falloff, glossIn.meshBoundsMin, glossIn.meshBoundsMax, glossIn.probeIndicies.z);
 
-	GetWeightUVW(UNITY_PASS_TEX2DARRAY(probeParams), glossIn.probeWeights.w, glossIn.UVW3, pixelWorldPos, reflectionDir, 
-		falloff, glossIn.meshBoundsMin, glossIn.meshBoundsMax, glossIn.probeIndicies.w);
+	GetWeightUVW(UNITY_PASS_TEX2DARRAY(probeParams), glossIn.probeWeights.w, glossIn.UVW3, glossIn.probeBoxProj.w, glossIn.probeBoxRayLen.w,
+		pixelWorldPos, reflectionDir, falloff, glossIn.meshBoundsMin, glossIn.meshBoundsMax, glossIn.probeIndicies.w);
+
+	//BoolProbeBoxes(glossIn);
+	glossIn.probeWeights.x = max(1E-6, glossIn.probeWeights.x);
+
 	 
 }
-
 
 /* Modified from Unity_GlossyEnvironment in UnityImageBasedLighting.cginc, with normal cubemap functions replaced with their cubemap array counterparts */
 half3 ProbeArray_GlossyEnvironment (UNITY_ARGS_TEXCUBEARRAY(tex), half4 hdr, ProbeArray_GlossyEnvironmentData glossIn)
@@ -229,7 +255,7 @@ half3 ProbeArray_GlossyEnvironment (UNITY_ARGS_TEXCUBEARRAY(tex), half4 hdr, Pro
 	
 	half3 probeMix = (probe0 * glossIn.probeWeights.x + probe1 * glossIn.probeWeights.y +
 		probe2 * glossIn.probeWeights.z + probe3 * glossIn.probeWeights.w) /
-		(glossIn.probeWeights.x + glossIn.probeWeights.y + glossIn.probeWeights.z + glossIn.probeWeights.w + 1E-6);
+		(glossIn.probeWeights.x + glossIn.probeWeights.y + glossIn.probeWeights.z + glossIn.probeWeights.w);
 	
     return probeMix;
 }

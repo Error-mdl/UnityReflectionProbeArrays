@@ -407,7 +407,7 @@ public class ReflectionProbeArrayCreator : EditorWindow
     foreach (GameObject gObj in objectsToConvert)
     {
       meshNum++;
-      EditorUtility.DisplayProgressBar(String.Format("Converting {0}/{1}", gObj.transform.parent.name, gObj.name), String.Format("{0} of {1}", meshNum, objectsToConvert.Count), ((float) meshNum) / ((float) objectsToConvert.Count));
+      EditorUtility.DisplayProgressBar(String.Format("Converting {0}", gObj.name), String.Format("{0} of {1}", meshNum, objectsToConvert.Count), ((float) meshNum) / ((float) objectsToConvert.Count));
       MeshProbes closestProbes = FindClosestProbes(reflProbeList, gObj);
       Mesh newMesh = MakeMeshCopy(gObj, closestProbes);
       gObj.GetComponent<MeshFilter>().sharedMesh = newMesh;

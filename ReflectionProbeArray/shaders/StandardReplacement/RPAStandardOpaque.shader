@@ -14,6 +14,8 @@ Shader "Reflection Probe Array/RPA Opaque"
 		_Smoothness("Smoothness/Roughness", Range(0, 1)) = 1
 		_ReflProbeArray("Reflection Probe Array", CUBEArray) = "black" {}
 		_ProbeParams("Reflection Probe Params", 2DArray) = "black" {}
+		_FacingWallMin("Box Projection Wall Fade Min Distance", float) = 0
+		_FacingWallMax("Box Projection Wall Fade Max Distance", float) = 0.1
 	}
 	SubShader
 	{

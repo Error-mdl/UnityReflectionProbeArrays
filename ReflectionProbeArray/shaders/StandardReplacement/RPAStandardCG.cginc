@@ -1,11 +1,9 @@
 
 uniform float4 _Color;
-uniform sampler2D _MainTex;
+UNITY_DECLARE_TEX2D(_MainTex);
 uniform float4 _MainTex_ST;
-uniform sampler2D _MetallicGlossMap;
-uniform float4 _MetallicGlossMap_ST;
-uniform sampler2D _BumpMap;
-uniform float4 _BumpMap_ST;
+UNITY_DECLARE_TEX2D_NOSAMPLER(_MetallicGlossMap);
+UNITY_DECLARE_TEX2D_NOSAMPLER(_BumpMap);
 uniform float _Cutoff;
 uniform float _Smoothness;
 uniform float _Metallic;
@@ -28,10 +26,10 @@ v2f vert(vertexIn v)
 
 float4 frag(v2f i) : SV_TARGET
 {
-	float4 albedoCol = tex2D(_MainTex, i.uv) * _Color;
+	float4 albedoCol = UNITY_SAMPLE_TEX2D(_MainTex, i.uv) * _Color;
 	//float4 metallicGlossMap = tex2D(_MetallicGlossMap, i.uv);
-	float4 metallicGlossMap = tex2D(_MetallicGlossMap, i.uv);
-	float3 tNormal = UnpackNormal(tex2D(_BumpMap, i.uv));
+	float4 metallicGlossMap = UNITY_SAMPLE_TEX2D_SAMPLER(_MetallicGlossMap, _MainTex, i.uv);
+	float3 tNormal = UnpackNormal(UNITY_SAMPLE_TEX2D_SAMPLER(_BumpMap, _MainTex, i.uv));
 
 	float3x3 TangentToWorld = float3x3(i.tangent.x, i.bitangent.x, i.normal.x,
 									   i.tangent.y, i.bitangent.y, i.normal.y,
@@ -42,7 +40,7 @@ float4 frag(v2f i) : SV_TARGET
 	//clip(texCol.a - _Cutoff);
 
 	#ifdef _SURFACE_SMOOTHNESS
-	float smoothness = metallicGlossMap.a * _Smoothness;
+	float smoothness = metallicGlossMap.g * _Smoothness;
 	#else
 	float smoothness = (1.0 - metallicGlossMap.a) * _Smoothness;
 	#endif

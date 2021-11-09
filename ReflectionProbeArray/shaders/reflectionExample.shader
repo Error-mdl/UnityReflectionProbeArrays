@@ -75,6 +75,8 @@
 
                 // sample the texture
                 float3 col = ProbeArray_GlossyEnvironment(UNITY_PASS_TEXCUBEARRAY(_ReflProbeArray), _ReflProbeArray_HDR, gloss);
+                //col = float3(
+                //    frac(length(gloss.UVW0)),0,0);
                 //return float4(i.probeIndex.x == 2, 0, 0, 1);
                 return float4(col,1);
             }

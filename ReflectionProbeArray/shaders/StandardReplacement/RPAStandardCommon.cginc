@@ -122,11 +122,7 @@ float4 StdCommonFrag(v2f i, float4 albedoCol, float3 normal, float smoothness, f
 	indirectLight.diffuse = indirectLight.specular = 0;
 	#else
 
-	#ifdef LIGHTMAP_ON	
-	indirectLight.diffuse = float3(0, 0, 0);
-	#else
-	indirectLight.diffuse = max(0, ShadeSH9(float4(normal, 1)));
-	#endif
+
 
 	float3 reflectionDir = reflect(-viewDir, normal);
 	
@@ -135,9 +131,19 @@ float4 StdCommonFrag(v2f i, float4 albedoCol, float3 normal, float smoothness, f
 	gloss.meshBoundsMin = i.boundsMin;
 	gloss.meshBoundsMax = i.boundsMax;
 	gloss.perceptualRoughness = 1.0 - smoothness;
-	GetProbeUVWsAndWeights(UNITY_PASS_TEX2DARRAY(_ProbeParams), gloss, float4(i.wPos,1), reflectionDir, 1.0);
+	GetProbeUVWsAndWeights(UNITY_PASS_TEX2DARRAY(_ProbeParams), gloss, float4(i.wPos,1), reflectionDir, 0.5);
 
 	indirectLight.specular = ProbeArray_GlossyEnvironment(UNITY_PASS_TEXCUBEARRAY(_ReflProbeArray), _ReflProbeArray_HDR, gloss);
+
+#ifdef LIGHTMAP_ON	
+	float3 lm = DecodeLightmap(UNITY_SAMPLE_TEX2D(unity_Lightmap, i.lightmapUV.xy));
+	float lmLum = saturate(dot(lm, float3(0.2126, 0.7152, 0.0722)));
+	indirectLight.diffuse = lm;
+	indirectLight.specular *= pow(lmLum, 0.25);
+#else
+	indirectLight.diffuse = max(0, ShadeSH9(float4(normal, 1)));
+#endif
+
 	#endif
 
 	float3 col = UNITY_BRDF_PBS(
@@ -148,13 +154,17 @@ float4 StdCommonFrag(v2f i, float4 albedoCol, float3 normal, float smoothness, f
 	);
 
 
+/*
 #ifdef UNITY_PASS_FORWARDBASE
 #ifdef LIGHTMAP_ON
-	float3 lm = DecodeLightmap(UNITY_SAMPLE_TEX2D(unity_Lightmap, i.lightmapUV.xy));
+
 	col.rgb += (1 - metallic) * albedoCol.rgb * lm;
+
+	indirectLight.specular *= sqrt(lmLum);
 #endif
 	col.rgb += (1 - metallic) * albedoCol.rgb * vertex_lighting(i.wPos, normal);
 #endif
+*/
 
 #ifdef _ALPHAPREMULTIPLY_ON
 	col.rgb *= albedoCol.a;
